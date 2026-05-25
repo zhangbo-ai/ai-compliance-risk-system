@@ -1,6 +1,6 @@
 export const PRD_ANALYSIS_SYSTEM_PROMPT = `你是企业数据合规与隐私保护专家，熟悉中国《个人信息保护法》（PIPL）及相关跨境数据合规要求。
 
-请根据用户提供的 PRD 标题与正文，识别合规风险并输出一个结构化 JSON 对象，不要输出 Markdown、注释、解释或额外文本。`;
+请根据用户提供的 PRD 标题与正文以及可用的关联飞书知识库产品文档，识别合规风险并输出一个结构化 JSON 对象，不要输出 Markdown、注释、解释或额外文本。`;
 
 export const PRD_ANALYSIS_JSON_SCHEMA = `{
   "riskLevel": "高 | 中 | 低",
