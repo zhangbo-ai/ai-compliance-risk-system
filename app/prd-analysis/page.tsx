@@ -22,6 +22,8 @@ type StoredAnalysis = {
 export default function PrdAnalysisPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [feishuUrl, setFeishuUrl] = useState("");
+  const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<PrdAnalysisResult | null>(null);
@@ -152,6 +154,55 @@ export default function PrdAnalysisPage() {
                 placeholder="例如：会员积分与门店推荐功能 PRD"
                 className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
+            </label>
+
+            <label className="mt-4 block">
+              <span className="text-xs font-medium text-slate-600">从飞书导入 PRD（粘贴文档链接）</span>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  type="text"
+                  value={feishuUrl}
+                  onChange={(e) => setFeishuUrl(e.target.value)}
+                  placeholder="https://www.feishu.cn/xxxx 或 分享链接"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const url = feishuUrl.trim();
+                    if (!url) return setError("请先粘贴飞书链接");
+                    setError("");
+                    setImporting(true);
+                    try {
+                      const resp = await fetch('/api/import-feishu', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url }),
+                      });
+                      const payload = await resp.json();
+                      if (!resp.ok) {
+                        setError(payload.error || '导入失败');
+                      } else {
+                        // fill title/content and trigger display
+                        setTitle(payload.prdTitle || '');
+                        setContent(payload.prdContent || '');
+                        if (payload.data) {
+                          setResult(payload.data);
+                          localStorage.setItem(STORAGE_KEY, JSON.stringify({ title: payload.prdTitle || '', content: payload.prdContent || '', data: payload.data }));
+                        }
+                      }
+                    } catch (e) {
+                      setError('导入时网络异常，请稍后重试');
+                    } finally {
+                      setImporting(false);
+                    }
+                  }}
+                  disabled={importing}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#0c2340] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {importing ? '导入中…' : '导入'}
+                </button>
+              </div>
             </label>
 
             <label className="mt-4 block">
