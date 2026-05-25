@@ -1,5 +1,3 @@
-import OpenAI from "openai";
-
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_OPENAI_MODEL = "qwen-plus";
 
@@ -19,23 +17,54 @@ export function getOpenAIModel(): string {
   return configured || DEFAULT_OPENAI_MODEL;
 }
 
-/** 创建 OpenAI 客户端（baseURL 来自环境变量或默认值） */
-export function createOpenAIClient(apiKey: string): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL: getOpenAIBaseUrl(),
+/** 构建 Chat Completions 请求地址 */
+export function getOpenAIChatCompletionUrl(): string {
+  return `${getOpenAIBaseUrl().replace(/\/$/, "")}/chat/completions`;
+}
+
+export async function callOpenAIChatCompletion(options: {
+  apiKey: string;
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+}) {
+  const requestBody = JSON.stringify({
+    model: options.model,
+    messages: options.messages,
+    temperature: options.temperature ?? 0.2,
+    max_tokens: options.maxTokens ?? 1200,
   });
+
+  const response = await fetch(getOpenAIChatCompletionUrl(), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${options.apiKey}`,
+      "Content-Type": "application/json; charset=utf-8",
+      Accept: "application/json",
+    },
+    body: new TextEncoder().encode(requestBody),
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    const message = text || response.statusText;
+    throw new Error(`OpenAI 请求失败（状态 ${response.status}）：${message}`);
+  }
+
+  return JSON.parse(text);
 }
 
 const QUOTA_ERROR_MESSAGE =
   "当前 API 账户额度不足，请检查余额或充值";
 
-function isQuotaRelatedError(error: OpenAI.APIError): boolean {
-  const message = error.message?.toLowerCase() ?? "";
-  const code = String(error.code ?? "").toLowerCase();
+function isQuotaRelatedError(error: any): boolean {
+  const message = String(error?.message ?? "").toLowerCase();
+  const code = String(error?.code ?? "").toLowerCase();
 
   return (
-    error.status === 429 ||
+    error?.status === 429 ||
     code.includes("insufficient_quota") ||
     code.includes("quota") ||
     message.includes("insufficient_quota") ||
@@ -47,13 +76,16 @@ function isQuotaRelatedError(error: OpenAI.APIError): boolean {
 
 /** 将 OpenAI 错误转为面向用户的提示文案 */
 export function formatOpenAIErrorMessage(error: unknown): string {
-  if (!(error instanceof OpenAI.APIError)) {
-    return "AI 分析服务暂时不可用，请稍后重试";
+  if (typeof error === "string") {
+    return error;
   }
 
-  if (isQuotaRelatedError(error)) {
-    return QUOTA_ERROR_MESSAGE;
+  if (error instanceof Error) {
+    if (isQuotaRelatedError(error)) {
+      return QUOTA_ERROR_MESSAGE;
+    }
+    return error.message || "AI 分析服务暂时不可用，请稍后重试";
   }
 
-  return error.message || "AI 分析服务暂时不可用，请稍后重试";
+  return "AI 分析服务暂时不可用，请稍后重试";
 }

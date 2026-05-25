@@ -1,3 +1,31 @@
+export type RiskItem = {
+  type: string;
+  level: string;
+  description: string;
+  impact: string;
+  recommendation: string;
+};
+
+export type ProcessingActivity = {
+  activityName: string;
+  dataTypes: string[];
+  purpose: string[];
+  legalBasis: string;
+  thirdPartySharing: boolean;
+  thirdPartySharingNote: string;
+  crossBorder: boolean;
+  crossBorderNote: string;
+  partners: string[];
+  retentionPeriod: string;
+  securityControls: string[];
+  owner: string;
+};
+
+export type PIASection = {
+  title: string;
+  content: string;
+};
+
 export type PrdAnalysisResult = {
   riskLevel: string;
   conclusion: string;
@@ -11,6 +39,9 @@ export type PrdAnalysisResult = {
   mainRisks: string[];
   suggestions: string[];
   requiresManualReview: boolean;
+  riskItems: RiskItem[];
+  processingActivities: ProcessingActivity[];
+  piaDraft: PIASection[];
 };
 
 export type RawAiPrdAnalysis = {
@@ -26,6 +57,9 @@ export type RawAiPrdAnalysis = {
   suggestions?: string[] | string;
   requiresManualReview?: boolean | string;
   conclusion?: string;
+  riskItems?: RiskItem[] | string;
+  processingActivities?: ProcessingActivity[] | string;
+  piaDraft?: PIASection[] | string;
 };
 
 function toStringArray(value: string[] | string | undefined): string[] {
@@ -33,6 +67,14 @@ function toStringArray(value: string[] | string | undefined): string[] {
     return value.map((item) => String(item).trim()).filter(Boolean);
   }
   if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      // fallback to delimiter split
+    }
     return value
       .split(/[,，、;；\n]/)
       .map((item) => item.trim())
@@ -45,9 +87,26 @@ function toBoolean(value: boolean | string | undefined): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    return ["true", "yes", "是", "涉及", "有"].includes(normalized);
+    return ["true", "yes", "是", "涉及", "有", "y", "1"].includes(normalized);
   }
   return false;
+}
+
+function parseJsonArray<T>(value: T[] | string | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      const lines = value
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return lines as unknown as T[];
+    }
+  }
+  return [];
 }
 
 function buildConclusion(
@@ -79,6 +138,31 @@ export function normalizeAiResponse(raw: RawAiPrdAnalysis): PrdAnalysisResult {
     mainRisks: toStringArray(raw.mainRisks),
     suggestions: toStringArray(raw.suggestions),
     requiresManualReview,
+    riskItems: parseJsonArray(raw.riskItems).map((item) => ({
+      type: String((item as any)?.type ?? "").trim(),
+      level: String((item as any)?.level ?? "").trim(),
+      description: String((item as any)?.description ?? "").trim(),
+      impact: String((item as any)?.impact ?? "").trim(),
+      recommendation: String((item as any)?.recommendation ?? "").trim(),
+    })),
+    processingActivities: parseJsonArray(raw.processingActivities).map((item) => ({
+      activityName: String((item as any)?.activityName ?? "").trim(),
+      dataTypes: toStringArray((item as any)?.dataTypes),
+      purpose: toStringArray((item as any)?.purpose),
+      legalBasis: String((item as any)?.legalBasis ?? "").trim(),
+      thirdPartySharing: toBoolean((item as any)?.thirdPartySharing),
+      thirdPartySharingNote: String((item as any)?.thirdPartySharingNote ?? "").trim(),
+      crossBorder: toBoolean((item as any)?.crossBorder),
+      crossBorderNote: String((item as any)?.crossBorderNote ?? "").trim(),
+      partners: toStringArray((item as any)?.partners),
+      retentionPeriod: String((item as any)?.retentionPeriod ?? "").trim(),
+      securityControls: toStringArray((item as any)?.securityControls),
+      owner: String((item as any)?.owner ?? "").trim(),
+    })),
+    piaDraft: parseJsonArray(raw.piaDraft).map((item) => ({
+      title: String((item as any)?.title ?? "").trim(),
+      content: String((item as any)?.content ?? "").trim(),
+    })),
   };
 }
 

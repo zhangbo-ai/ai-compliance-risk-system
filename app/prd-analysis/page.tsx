@@ -1,8 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { PrdAnalysisResult } from "../../lib/prd-analysis";
+import {
+  buildMarkdownReport,
+  buildWordHtml,
+  buildPdfBytes,
+  downloadBlob,
+  buildFileName,
+} from "../../lib/analysis-export";
+
+const STORAGE_KEY = "ai-prd-analysis-result";
+
+type StoredAnalysis = {
+  title: string;
+  content: string;
+  data: PrdAnalysisResult;
+};
 
 export default function PrdAnalysisPage() {
   const [title, setTitle] = useState("");
@@ -10,6 +25,20 @@ export default function PrdAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<PrdAnalysisResult | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as StoredAnalysis;
+      setTitle(parsed.title || "");
+      setContent(parsed.content || "");
+      setResult(parsed.data ?? null);
+    } catch {
+      // ignore invalid cache
+    }
+  }, []);
 
   async function handleAnalyze() {
     const trimmedTitle = title.trim();
@@ -51,12 +80,37 @@ export default function PrdAnalysisPage() {
       }
 
       setResult(payload.data);
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ title: trimmedTitle, content: trimmedContent, data: payload.data }),
+      );
     } catch {
       setError("网络异常，请检查连接后重试");
     } finally {
       setLoading(false);
     }
   }
+
+  const handleDownloadMarkdown = () => {
+    if (!result) return;
+    const markdown = buildMarkdownReport(title, result);
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    downloadBlob(buildFileName(title, "md"), blob);
+  };
+
+  const handleDownloadWord = () => {
+    if (!result) return;
+    const html = buildWordHtml(title, result);
+    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
+    downloadBlob(buildFileName(title, "doc"), blob);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!result) return;
+    const bytes = await buildPdfBytes(title, result);
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
+    downloadBlob(buildFileName(title, "pdf"), blob);
+  };
 
   return (
     <div className="min-h-full bg-slate-100">
@@ -78,7 +132,7 @@ export default function PrdAnalysisPage() {
         <section className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0c2340] via-[#143a6e] to-[#1e4d8c] px-6 py-6 text-white shadow-lg">
           <h1 className="text-xl font-bold sm:text-2xl">PRD风险分析</h1>
           <p className="mt-2 text-sm text-blue-100/90">
-            对接 AI 进行隐私与数据合规风险识别（PIPL）
+            对接 AI 进行隐私与数据合规风险识别（PIPL），并生成合规看板与输出文档。
           </p>
         </section>
 
@@ -153,58 +207,108 @@ export default function PrdAnalysisPage() {
             )}
 
             {result && !loading && (
-              <article className="mt-5 overflow-hidden rounded-lg border border-slate-200">
-                <div className="bg-[#0c2340] px-4 py-3 text-white">
-                  <p className="text-xs text-blue-200/80">Privacy Compliance Report</p>
-                  <h3 className="mt-0.5 text-sm font-bold">隐私合规风险评估报告</h3>
-                  <p className="mt-1 text-xs text-blue-100/90">评估对象：{title.trim()}</p>
+              <>
+                <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Link
+                      href="/prd-analysis/dashboard"
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
+                    >
+                      查看风险看板
+                    </Link>
+                    <Link
+                      href="/prd-analysis/activities"
+                      className="rounded-lg bg-slate-800 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-slate-900"
+                    >
+                      查看数据台账
+                    </Link>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Link
+                      href="/prd-analysis/pia"
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      查看 PIA 草稿
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleDownloadMarkdown}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    >
+                      导出 Markdown
+                    </button>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadWord}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    >
+                      导出 Word
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPdf}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    >
+                      导出 PDF
+                    </button>
+                  </div>
                 </div>
 
-                <div className="divide-y divide-slate-100 bg-white text-sm">
-                  <ReportRow label="风险等级">
-                    <RiskBadge level={result.riskLevel} />
-                  </ReportRow>
-                  <ReportRow label="评估结论" highlight>
-                    <p className="leading-relaxed text-slate-700">{result.conclusion}</p>
-                  </ReportRow>
-                  <ReportRow label="涉及个人信息">
-                    <TagList items={result.personalInfo} />
-                  </ReportRow>
-                  <ReportRow label="涉及敏感个人信息">
-                    <TagList items={result.sensitivePersonalInfo} variant="amber" />
-                  </ReportRow>
-                  <ReportRow label="数据处理目的">
-                    <TagList items={result.dataProcessingPurposes} variant="slate" />
-                  </ReportRow>
-                  <ReportRow label="第三方共享">
-                    <YesNo value={result.involvesThirdPartySharing} note={result.thirdPartySharingNote} />
-                  </ReportRow>
-                  <ReportRow label="跨境传输">
-                    <YesNo value={result.involvesCrossBorder} note={result.crossBorderNote} />
-                  </ReportRow>
-                  <ReportRow label="主要风险">
-                    <TagList items={result.mainRisks} variant="red" />
-                  </ReportRow>
-                  <ReportRow label="整改建议">
-                    <ol className="list-decimal space-y-1 pl-5 text-slate-700">
-                      {result.suggestions.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ol>
-                  </ReportRow>
-                  <ReportRow label="人工复核" last>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-                        result.requiresManualReview
-                          ? "bg-amber-50 text-amber-800 ring-amber-200"
-                          : "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                      }`}
-                    >
-                      {result.requiresManualReview ? "建议人工复核" : "暂无需人工复核"}
-                    </span>
-                  </ReportRow>
-                </div>
-              </article>
+                <article className="mt-5 overflow-hidden rounded-lg border border-slate-200">
+                  <div className="bg-[#0c2340] px-4 py-3 text-white">
+                    <p className="text-xs text-blue-200/80">Privacy Compliance Report</p>
+                    <h3 className="mt-0.5 text-sm font-bold">隐私合规风险评估报告</h3>
+                    <p className="mt-1 text-xs text-blue-100/90">评估对象：{title.trim()}</p>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 bg-white text-sm">
+                    <ReportRow label="风险等级">
+                      <RiskBadge level={result.riskLevel} />
+                    </ReportRow>
+                    <ReportRow label="评估结论" highlight>
+                      <p className="leading-relaxed text-slate-700">{result.conclusion}</p>
+                    </ReportRow>
+                    <ReportRow label="涉及个人信息">
+                      <TagList items={result.personalInfo} />
+                    </ReportRow>
+                    <ReportRow label="涉及敏感个人信息">
+                      <TagList items={result.sensitivePersonalInfo} variant="amber" />
+                    </ReportRow>
+                    <ReportRow label="数据处理目的">
+                      <TagList items={result.dataProcessingPurposes} variant="slate" />
+                    </ReportRow>
+                    <ReportRow label="第三方共享">
+                      <YesNo value={result.involvesThirdPartySharing} note={result.thirdPartySharingNote} />
+                    </ReportRow>
+                    <ReportRow label="跨境传输">
+                      <YesNo value={result.involvesCrossBorder} note={result.crossBorderNote} />
+                    </ReportRow>
+                    <ReportRow label="主要风险">
+                      <TagList items={result.mainRisks} variant="red" />
+                    </ReportRow>
+                    <ReportRow label="整改建议">
+                      <ol className="list-decimal space-y-1 pl-5 text-slate-700">
+                        {result.suggestions.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ol>
+                    </ReportRow>
+                    <ReportRow label="人工复核" last>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                          result.requiresManualReview
+                            ? "bg-amber-50 text-amber-800 ring-amber-200"
+                            : "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                        }`}
+                      >
+                        {result.requiresManualReview ? "建议人工复核" : "暂无需人工复核"}
+                      </span>
+                    </ReportRow>
+                  </div>
+                </article>
+              </>
             )}
           </section>
         </div>
